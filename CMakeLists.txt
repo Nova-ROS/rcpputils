@@ -26,6 +26,7 @@ endif()
 
 add_library(${PROJECT_NAME}
   src/asserts.cpp
+  src/class_loader.cpp
   src/env.cpp
   src/filesystem_helper.cpp
   src/find_library.cpp
