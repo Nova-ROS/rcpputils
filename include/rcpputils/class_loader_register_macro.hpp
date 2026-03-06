@@ -16,35 +16,75 @@
 #define RCPPUTILS__CLASS_LOADER_REGISTER_MACRO_HPP_
 
 #include "rcpputils/class_loader.hpp"
-#include "rcpputils/visibility_control.hpp"
+
+#define RCPPUTILS_CONCAT_IMPL(a, b) a ## b
+#define RCPPUTILS_CONCAT(a, b) RCPPUTILS_CONCAT_IMPL(a, b)
+
+// Helper to prevent optimization of static initializers
+#ifdef __GNUC__
+  #define RCPPUTILS_USED_ATTRIBUTE __attribute__((used))
+#else
+  #define RCPPUTILS_USED_ATTRIBUTE
+#endif
+
+// Use a struct with a constructor to trigger registration at library load time
+// The __attribute__((used)) prevents the linker from optimizing away the static variable
+#define CLASS_LOADER_REGISTER_CLASS_INTERNAL(Derived, Base, UniqueID) \
+struct RCPPUTILS_CONCAT(ClassRegistrar_, UniqueID) { \
+  RCPPUTILS_CONCAT(ClassRegistrar_, UniqueID)() { \
+    rcpputils::class_loader::register_class<Base>( \
+      #Derived, \
+      []() -> std::unique_ptr<Base> { return std::make_unique<Derived>(); }, \
+      [](Base * obj) { delete obj; } \
+    ); \
+  } \
+}; \
+static RCPPUTILS_CONCAT(ClassRegistrar_, UniqueID) RCPPUTILS_CONCAT(g_class_registrar_, UniqueID) RCPPUTILS_USED_ATTRIBUTE;
 
 /**
- * \brief Macro to register a derived class with the factory.
- * \param Derived The derived class name.
+ * \brief Register a derived class with the class loader factory.
+ *
+ * This macro should be placed in the .cpp file of the derived class.
+ * It automatically registers the class when the shared library is loaded.
+ *
+ * Usage:
+ * \code{.cpp}
+ * #include "rcpputils/class_loader_register_macro.hpp"
+ *
+ * class MyPlugin : public PluginBase {
+ *   // ...
+ * };
+ *
+ * CLASS_LOADER_REGISTER_CLASS(MyPlugin, PluginBase)
+ * \endcode
+ *
+ * \param Derived The derived class name (must have a default constructor).
  * \param Base The base class name.
  */
-#define CLASS_LOADER_REGISTER_CLASS_INTERNAL_WITH_MESSAGE(Derived, Base, UniqueID, Message) \
-static void rcpputils_auto_register_plugins ## UniqueID() { \
-  rcpputils::class_loader::register_class<Base>(#Derived, \
-                                      []() -> Base* { return new Derived; }, \
-                                      [](Base * obj) { delete obj; }); \
-}
-
-#define CLASS_LOADER_REGISTER_CLASS_INTERNAL_HOP1_WITH_MESSAGE(Derived, Base, UniqueID, Message) \
-  CLASS_LOADER_REGISTER_CLASS_INTERNAL_WITH_MESSAGE(Derived, Base, UniqueID, Message)
-
-/**
-* @macro This macro is same as CLASS_LOADER_REGISTER_CLASS, but will spit out a message when the plugin is registered
-* at library load time
-*/
-#define CLASS_LOADER_REGISTER_CLASS_WITH_MESSAGE(Derived, Base, Message) \
-  CLASS_LOADER_REGISTER_CLASS_INTERNAL_HOP1_WITH_MESSAGE(Derived, Base, __COUNTER__, Message)
-
-/**
-* @macro This is the macro which must be declared within the source (.cpp) file for each class that is to be exported as plugin.
-* The macro utilizes a trick where a new struct is generated along with a declaration of static global variable of same type after it. The struct's constructor invokes a registration function with the plugin system. When the plugin system loads a library with registered classes in it, the initialization of static variables forces the invocation of the struct constructors, and all exported classes are automatically registerd.
-*/
 #define CLASS_LOADER_REGISTER_CLASS(Derived, Base) \
-  CLASS_LOADER_REGISTER_CLASS_WITH_MESSAGE(Derived, Base, "")
+  CLASS_LOADER_REGISTER_CLASS_INTERNAL(Derived, Base, __COUNTER__)
+
+/**
+ * \brief Register a derived class with a custom factory function.
+ *
+ * Use this when the derived class doesn't have a default constructor
+ * or requires special construction logic.
+ *
+ * \param Derived The derived class name.
+ * \param Base The base class name.
+ * \param FactoryFunc A callable that returns std::unique_ptr<Base>.
+ */
+#define CLASS_LOADER_REGISTER_CLASS_WITH_FACTORY(Derived, Base, FactoryFunc) \
+struct RCPPUTILS_CONCAT(ClassRegistrarFactory_, __COUNTER__) { \
+  RCPPUTILS_CONCAT(ClassRegistrarFactory_, __COUNTER__)() { \
+    rcpputils::class_loader::register_class<Base>( \
+      #Derived, \
+      FactoryFunc, \
+      [](Base * obj) { delete obj; } \
+    ); \
+  } \
+}; \
+static RCPPUTILS_CONCAT(ClassRegistrarFactory_, __COUNTER__) \
+  RCPPUTILS_CONCAT(g_class_registrar_factory_, __COUNTER__) RCPPUTILS_USED_ATTRIBUTE;
 
 #endif  // RCPPUTILS__CLASS_LOADER_REGISTER_MACRO_HPP_

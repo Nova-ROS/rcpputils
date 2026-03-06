@@ -164,6 +164,23 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_unique_lock test/test_unique_lock.cpp)
   target_link_libraries(test_unique_lock ${PROJECT_NAME})
+
+  # Class loader tests
+  add_library(test_class_loader_plugins SHARED
+    test/test_class_loader_plugins/plugins.cpp)
+  target_include_directories(test_class_loader_plugins PUBLIC
+    test/test_class_loader_plugins)
+  target_link_libraries(test_class_loader_plugins PUBLIC ${PROJECT_NAME})
+
+  ament_add_gtest(test_class_loader test/test_class_loader.cpp)
+  target_include_directories(test_class_loader PRIVATE
+    test/test_class_loader_plugins)
+  # Do NOT link against test_class_loader_plugins: we load it dynamically
+  # via ClassLoader so that dlopen/dlclose work correctly.
+  target_link_libraries(test_class_loader ${PROJECT_NAME})
+  set_tests_properties(test_class_loader PROPERTIES
+    ENVIRONMENT
+      "TEST_CLASS_LOADER_PLUGINS_LIBRARY=$<TARGET_FILE:test_class_loader_plugins>")
 endif()
 
 ament_package()
